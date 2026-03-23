@@ -4,7 +4,14 @@ A context-aware focus mode Android application that monitors ambient noise and d
 
 ## Architecture
 
-The project follows **Clean Architecture** with three Gradle modules:
+Three-module Clean Architecture setup: `:domain`, `:data`, and `:app`.
+The domain module is pure Kotlin with zero Android dependencies -- it holds the entities, repository interfaces, and use cases.
+The data module implements those interfaces with Room, DataStore, Retrofit, and the actual sensor code.
+The app module is Compose UI, ViewModels, navigation, and DI wiring.
+
+The reason I split it this way is that the domain layer becomes trivially testable without any Android framework, and the dependency rule is enforced at the Gradle level -- domain doesn't know about data or app, so business logic can't accidentally couple to implementation details. ViewModels only talk to use cases and repository interfaces, never to Room DAOs or sensor APIs directly.
+
+I used Koin for dependency injection because it's pure kotlin and doesn't require code generation or annotations. For navigation I went with Jetpack Navigation 3 since it integrates cleanly with Compose and supports animated transitions out of the box.
 
 ```
 :app  -->  :domain  <--  :data
@@ -21,17 +28,83 @@ The project follows **Clean Architecture** with three Gradle modules:
 ### Key classes
 
 - `FocusSessionController` (data) — owns a session-scoped `CoroutineScope` that starts/stops noise and motion sampling, applies threshold + throttle policy, records distractions, fires notifications, and publishes telemetry via `StateFlow`.
-- `MockRestInterceptor` (data) — OkHttp application interceptor with in-memory `ConcurrentHashMap` store. Intercepts `POST /sessions`, `GET /sessions`, and `GET /session/{id}` without network access. Located at `data/src/main/kotlin/.../data/remote/MockRestInterceptor.kt`.
+- `MockRestInterceptor` (data) — OkHttp application interceptor with in-memory `ConcurrentHashMap` store. Intercepts `POST /sessions`, `GET /sessions`, and `GET /session/{id}` without network access.
 - `NotificationHelper` (data) — builds notification channel (API 26+ guarded), fires throttled notifications per distraction type with vibration.
 
-## Native resources
+## Trade-offs
 
-| Resource | Implementation | Notes |
-|----------|---------------|-------|
-| Microphone | `AudioRecord` with `VOICE_RECOGNITION` source, 8 kHz mono 16-bit PCM | Reads short buffers, computes max amplitude as noise level metric |
-| Accelerometer | `SensorManager` + `TYPE_ACCELEROMETER`, `SENSOR_DELAY_UI` | Computes magnitude from x/y/z, uses exponential smoothing |
-| Notifications | `NotificationChannel` (API 26+), `NotificationCompat`, `POST_NOTIFICATIONS` (API 33+) | Throttled per type: noise 5s, motion 3s; paired with vibration |
-| Screen | `FLAG_KEEP_SCREEN_ON` via `DisposableEffect` while session active | Cleared on session stop or composable disposal |
+The biggest one is using `FLAG_KEEP_SCREEN_ON` instead of a foreground service. A real focus app might need to keep monitoring even when the user locks the screen or switches apps, depending on business rules. I chose the simpler approach because a foreground service adds significant complexity (lifecycle management, persistent notification, wake locks) that would have taken time away from getting the core detection and UI right. The architecture is set up so that swapping in a service later is straightforward -- `FocusSessionController` already owns the sampling coroutine scope independently from any UI lifecycle.
+
+The permission flow is another deliberate simplification. The app blocks everything behind an onboarding screen until all permissions are granted. In production I'd use contextual requests -- ask for the microphone when the user first taps "Start Session" for ex. The current gate is blunt but ensures the app never crashes from missing permissions.
+
+The mock REST interceptor lives in the OkHttp layer, which means the Retrofit service, DTOs, and serialization all run for real -- the only fake part is the network transport itself. The downside is that the mock store resets on process death, but Room handles real persistence, so session data survives restarts regardless.
+
+Distraction detection uses fixed numeric thresholds rather than anything adaptive. I considered a calibration step where the app samples the environment for a few seconds before starting, but decided it was out of scope. The three sensitivity levels (Normal, Sensitive, Extra Sensitive) give the user manual control as a simpler alternative.
+
+## What I intentionally deprioritized
+
+- **Background operation.** Sessions stop detecting when the app is backgrounded. I prioritized getting the in-app experience solid over the service infrastructure.
+- **Distraction event history.** The app tracks total distraction count per session but doesn't persist individual events with timestamps. The `DistractionEvent` model exists in the domain layer for this, but I didn't wire up a full event log UI -- the session summary felt more important for the MVP.
+- **Polished error handling on sync.** The mock API always succeeds, so I didn't build retry logic or an offline sync queue. The `Resource` wrapper is in place for error propagation, but the UI doesn't surface sync failures yet.
+- **ProGuard / R8 configuration.** Minification is disabled. A release build would need keep rules for Retrofit, kotlinx-serialization, and Room.
+
+## What I would improve with more time
+
+First priority would be a **foreground service** so focus sessions survive screen-off and app backgrounding. The controller logic is already decoupled from the UI, so it's mostly lifecycle and notification plumbing.
+
+I'd add a **calibration step** that samples ambient noise for 5-10 seconds before starting a session and adjusts thresholds relative to the baseline. This would make the app usable in noisy environments like coffee shops without requiring the user to manually pick "Extra Sensitive."
+
+On the data side, I'd replace the mock interceptor with a **real backend** (or at least a local server for testing) and build an offline-first sync queue with retry and conflict resolution.
+
+The UI could benefit from a **session detail screen** showing a timeline of distraction events, and **charts or trends** across past sessions so the user can see their focus improving over time.
+
+Finally, I'd add **instrumented UI tests** with Compose testing APIs to verify navigation flows, permission handling, and theme switching end-to-end.
+
+## How I approached native resource handling
+
+The app uses three native Android resources directly: the microphone, the accelerometer, and the notification system.
+
+For the **microphone**, I'm using `AudioRecord` with a voice recognition source at 8 kHz mono.
+
+For the **accelerometer**, I register a `SensorManager` listener at `SENSOR_DELAY_UI` rate and compute the vector magnitude from x/y/z.
+
+Both sensors are started and stopped by `FocusSessionController`, which owns a coroutine scope tied to the session lifetime. When a session starts, it launches sampling coroutines; when it stops, the scope is cancelled and sensors are released. This keeps resource management predictable and avoids leaks.
+
+**Notifications** use `NotificationChannel` with `NotificationCompat` for backward compatibility. Each distraction type has its own throttle window (5 seconds for noise, 3 seconds for motion) so the user isn't bombarded. Notifications include vibration to get attention without being too intrusive.
+
+The **screen** stays on during active sessions using `FLAG_KEEP_SCREEN_ON`, applied through a Compose `DisposableEffect` that cleans up when the session ends or the composable leaves composition.
+
+## How I ensured testability
+
+The architecture was designed with testing in mind from the start. The domain module has zero Android dependencies, so all its tests run on the JVM without emulators or Robolectric. Every repository and sensor interface has a corresponding fake implementation that I can control in tests.
+
+Use case tests verify the business logic -- things like "starting a session calls the repository," "stopping a session returns the stopped session," "changing sensitivity stops any active session first," and "sync delegates to the sync repository." These all run with `kotlinx-coroutines-test` and fakes.
+
+In the data module, I test the `SessionMapper` (all four mapping directions with edge cases) and the `MockRestInterceptor` (using a real `OkHttpClient` so the full HTTP serialization path is exercised). These don't need Android either.
+
+ViewModel tests in the app module verify that the presentation layer correctly wires up use cases, propagates flow state, and handles user actions like toggling debug mode or starting/stopping sessions. The fakes are duplicated in the app test sources since Gradle doesn't share test dependencies across modules.
+
+I intentionally didn't unit-test `FocusSessionController` or Room DAOs because they're tightly coupled to Android system APIs. Those are better covered by instrumented tests, which I'd add next.
+
+### Running tests
+
+```
+./gradlew :domain:test
+./gradlew :data:test
+./gradlew :app:testDebugUnitTest
+```
+
+## How I would scale this in production
+
+The current architecture already separates concerns cleanly, so scaling is mostly about infrastructure:
+
+**Backend sync** would move from the mock interceptor to a real API with authentication, and I'd add a `WorkManager`-based sync queue that retries on failure and batches uploads when connectivity is restored.
+
+**Background operation** would require a foreground service with a persistent notification showing session status. The `FocusSessionController` already manages its own coroutine scope, so it could live inside a service without major refactoring.
+
+**Multiple sensor sources** (GPS for location-based focus zones, screen usage tracking, app usage stats) could be added by implementing new `Sampler` interfaces in the data layer and combining their telemetry in the controller. The domain layer wouldn't need to change.
+
+The modular structure means each of these could be developed and tested independently without touching unrelated code.
 
 ## Session-driven theming
 
@@ -60,58 +133,6 @@ The app gates all functionality behind an onboarding screen until required permi
 - **POST_NOTIFICATIONS** — required on API 33+ for notification delivery.
 
 If a permission was previously denied, the onboarding screen offers an "Open App Settings" button and re-checks grants when the activity resumes.
-
-## Trade-offs
-
-- **Permission gate vs. contextual requests:** The onboarding screen blocks access until all permissions are granted. A production app might use contextual requests and degrade gracefully.
-- **Screen-on vs. foreground service:** Sessions rely on `FLAG_KEEP_SCREEN_ON` rather than a foreground service. Detection stops if the screen turns off or the app is backgrounded. A foreground service would be the next step for reliability.
-- **Simple thresholds vs. ML:** Distraction detection uses fixed numeric thresholds per sensitivity level. No machine learning or adaptive calibration — thresholds are tunable constants.
-- **In-process mock API:** The mock REST interceptor is stateful only for the process lifetime. Data persists locally in Room across process death; the mock store resets.
-- **Per-sensor sensitivity:** Noise and motion thresholds can be configured independently (Normal / Sensitive / Extra Sensitive for each), stored as two separate DataStore keys.
-
-## Testability
-
-Three layers of unit tests cover domain logic, data mapping, and presentation:
-
-### Domain tests (`domain/src/test/`)
-- **Pure Kotlin, no Android dependencies.** All repository and sensor interfaces have in-memory fake implementations under `domain/src/test/.../fake/`.
-- **Model tests** — `SensorPreferencesTest` verifies threshold computation for all sensitivity levels and default values.
-- **Use case tests** — `StartFocusSessionUseCaseTest`, `StopFocusSessionUseCaseTest`, `SyncSessionUseCaseTest`, and `UpdateSensorPreferenceUseCaseTest` verify business logic (session lifecycle, preference updates stop active sessions, sync success/error paths) using fakes and `kotlinx-coroutines-test`.
-
-### Data tests (`data/src/test/`)
-- **`MockRestInterceptorTest`** — exercises the REST contract (POST creates with generated ID, GET returns stored data, GET 404 for unknown IDs, list filtering) using a real `OkHttpClient` with the interceptor attached. No Android framework needed.
-- **`SessionMapperTest`** — verifies all four mapping directions (entity-to-domain, domain-to-entity, domain-to-dto, dto-to-domain) including edge cases like null end times and zero IDs.
-
-### App / ViewModel tests (`app/src/test/`)
-- Fakes for domain interfaces are duplicated in `app/src/test/.../fake/` since domain test sources aren't on the app's test classpath.
-- **`HomeViewModelTest`** — initial state defaults, debug toggle, start/stop session lifecycle, sync-on-stop, and telemetry propagation.
-- **`SessionsViewModelTest`** — empty initial list, past-sessions-only filtering, multiple session accumulation.
-- **`PreferencesViewModelTest`** — default preferences, session active detection, per-sensor level updates, independence of noise/motion, and session-stop side-effect on preference change.
-
-### Why these layers?
-- **Domain** tests protect pure business rules and threshold math from regressions.
-- **Data mapper/interceptor** tests validate the serialization boundary without needing a real network or database, catching contract drift early.
-- **ViewModel** tests ensure the presentation layer correctly orchestrates use cases, maps flows to UI state, and handles user actions — all without Compose or Android instrumentation.
-
-`FocusSessionController` and Room DAO queries are not unit-tested in this scope because they depend heavily on Android system APIs (`AudioRecord`, `SensorManager`, Room's generated code). These would be better covered by instrumented tests or integration tests in a CI environment.
-
-### Running tests
-
-```
-./gradlew :domain:test
-./gradlew :data:test
-./gradlew :app:testDebugUnitTest
-```
-
-## What would improve with more time
-
-- **Foreground service** for reliable background detection when the screen is off or the app is in the background.
-- **Contextual permission requests** with graceful degradation instead of a blocking onboarding gate.
-- **Real backend** replacing the mock interceptor, with proper error handling, retry logic, and offline sync queue.
-- **Adaptive thresholds** or calibration step to account for different environments and device sensitivities.
-- **Distraction event detail screen** showing individual noise/motion events with timestamps within a session.
-- **Instrumented UI tests** with Compose testing APIs for navigation flows and screen assertions.
-- **ProGuard / R8 rules** for minified release builds (Retrofit, kotlinx-serialization).
 
 ## Build
 
