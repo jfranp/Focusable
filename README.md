@@ -25,6 +25,8 @@ I used Koin for dependency injection because it's pure kotlin and doesn't requir
 
 **Dependency rule:** `:app` depends on `:domain` and `:data`; `:data` depends on `:domain`; `:domain` depends on neither.
 
+PS:For a bigger production level project it might make sense to change up the module structure. Instead of dividing according to clean layers at the top level, it might make more sense to divide the modules according to features, with clean layers inside of them, this way we might be able to test and build features separately; features can be built, tested, and compiled independently. In a team setting, two developers can work on different features without merge conflicts in a shared data module. This avoids making monolith modules and keeps the clean architecture separation of concerns. Doesn't make sense for a small application though.
+
 ### Key classes
 
 - `FocusSessionController` (data) — owns a session-scoped `CoroutineScope` that starts/stops noise and motion sampling, applies threshold + throttle policy, records distractions, fires notifications, and publishes telemetry via `StateFlow`.
