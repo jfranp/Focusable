@@ -1,0 +1,61 @@
+<resources>
+    <string name="app_name">Focusable</string>
+
+    <!-- Navigation -->
+    <string name="nav_label_focus">Focus</string>
+    <string name="nav_label_sessions">Sessions</string>
+    <string name="nav_label_preferences">Preferences</string>
+    <string name="top_bar_title_sessions">Sessions</string>
+    <string name="top_bar_title_preferences">Preferences</string>
+    <string name="cd_hide_debug_dashboard">Hide debug dashboard</string>
+    <string name="cd_show_debug_dashboard">Show debug dashboard</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Permissions Required</string>
+    <string name="onboarding_body">Focusable needs the following permissions to monitor your focus sessions:</string>
+    <string name="onboarding_bullet_microphone">\u2022 Microphone — to detect ambient noise levels</string>
+    <string name="onboarding_bullet_notifications">\u2022 Notifications — to alert you about distractions</string>
+    <string name="onboarding_button_grant">Grant Permissions</string>
+    <string name="onboarding_button_settings">Open App Settings</string>
+    <string name="onboarding_footer">If you previously denied a permission, you may need to grant it from app settings.</string>
+
+    <!-- Home / Focus -->
+    <string name="home_start_session">Start\nSession</string>
+    <string name="home_stop_session">Stop\nSession</string>
+    <string name="home_distractions_format">Distractions: %1$d</string>
+    <string name="home_noise_level_format">Noise: %1$s</string>
+    <string name="home_motion_level_format">Motion: %1$s</string>
+    <string name="home_no_active_session">No active session</string>
+    <string name="home_tap_to_start">Tap the button above to start focusing</string>
+    <string name="home_debug_title">Debug Dashboard</string>
+    <string name="home_debug_not_sampling">Not sampling \u2014 start a session to see live values</string>
+    <string name="home_debug_noise_level">Noise Level</string>
+    <string name="home_debug_motion_level">Motion Level</string>
+    <string name="home_debug_above_threshold">Above threshold</string>
+
+    <!-- Sessions -->
+    <string name="sessions_empty_title">No sessions yet</string>
+    <string name="sessions_empty_subtitle">Complete a focus session to see it here</string>
+    <string name="sessions_end_format">End: %1$s</string>
+    <string name="sessions_end_unknown">End: N/A</string>
+    <string name="sessions_duration_format">Duration: %1$s</string>
+    <plurals name="sessions_distraction_count">
+        <item quantity="one">%1$d distraction</item>
+        <item quantity="other">%1$d distractions</item>
+    </plurals>
+
+    <!-- Preferences -->
+    <string name="preferences_sensitivity_title">Sensitivity</string>
+    <string name="preferences_sensitivity_description">Controls how easily distractions are detected during focus sessions. Each sensor can be tuned independently.</string>
+    <string name="preferences_active_session_warning">Changing sensitivity will end the current active session.</string>
+    <string name="preferences_noise_sensitivity_title">Noise Sensitivity</string>
+    <string name="preferences_motion_sensitivity_title">Motion Sensitivity</string>
+    <string name="preset_name_normal">Normal</string>
+    <string name="preset_name_sensitive">Sensitive</string>
+    <string name="preset_name_extra_sensitive">Extra sensitive</string>
+    <string name="preset_desc_normal">Standard thresholds for typical environments</string>
+    <string name="preset_desc_sensitive">Lower thresholds for quieter environments</string>
+    <string name="preset_desc_extra_sensitive">Minimal thresholds for maximum focus</string>
+    <string name="preset_noise_threshold_format">Threshold: %1$d</string>
+    <string name="preset_motion_threshold_format">Threshold: %1$s</string>
+</resources>
