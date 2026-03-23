@@ -52,7 +52,7 @@ Distraction detection uses fixed numeric thresholds rather than anything adaptiv
 
 First priority would be a **foreground service** so focus sessions survive screen-off and app backgrounding. The controller logic is already decoupled from the UI, so it's mostly lifecycle and notification plumbing.
 
-I'd add a **calibration step** that samples ambient noise for 5-10 seconds before starting a session and adjusts thresholds relative to the baseline. This would make the app usable in noisy environments like coffee shops without requiring the user to manually pick "Extra Sensitive."
+I'd add a **calibration step** feature that samples ambient noise for 5-10 seconds before starting a session and adjusts thresholds relative to the baseline. This would make the app usable in noisy environments like coffee shops without requiring the user to manually pick "Extra Sensitive."
 
 On the data side, I'd replace the mock interceptor with a **real backend** (or at least a local server for testing) and build an offline-first sync queue with retry and conflict resolution.
 
@@ -100,13 +100,15 @@ The current architecture already separates concerns cleanly, so scaling is mostl
 
 **Backend sync** would move from the mock interceptor to a real API with authentication, and I'd add a `WorkManager`-based sync queue that retries on failure and batches uploads when connectivity is restored.
 
-**Background operation** would require a foreground service with a persistent notification showing session status. The `FocusSessionController` already manages its own coroutine scope, so it could live inside a service without major refactoring.
+**Background operation** would require a foreground service with a persistent notification showing session, a workmanager service would run on the background with the sensors. The `FocusSessionController` already manages its own coroutine scope, so it could live inside a service without major refactoring.
 
 **Multiple sensor sources** (GPS for location-based focus zones, screen usage tracking, app usage stats) could be added by implementing new `Sampler` interfaces in the data layer and combining their telemetry in the controller. The domain layer wouldn't need to change.
 
-The modular structure means each of these could be developed and tested independently without touching unrelated code.
+Also, for a bigger production level project it might make sense to change up the module structure. Instead of dividing according to clean layers at the top level, it might make more sense to divide modules according to features, with clean layers inside of them.
 
 ## Session-driven theming
+
+I made a little dynamic behavior where the app changes theme/color according to session status.asd
 
 The app uses two Material 3 color schemes:
 
@@ -132,14 +134,4 @@ The app gates all functionality behind an onboarding screen until required permi
 - **RECORD_AUDIO** — required on all API levels for microphone access.
 - **POST_NOTIFICATIONS** — required on API 33+ for notification delivery.
 
-If a permission was previously denied, the onboarding screen offers an "Open App Settings" button and re-checks grants when the activity resumes.
-
-## Build
-
-Requires Android Studio with AGP 9.1.0+ and Kotlin 2.2.10.
-
-```
-./gradlew :app:assembleDebug
-```
-
-Min SDK: 24 | Target/Compile SDK: 36
+If a permission was previously denied, the onboarding screen offers an "Open App Settings" button and re-checks grants when the activity resumes. I did it this way just to simplify permission management into a single place as well as making sure permissions are provided before entering the app, so that the MVP demos can run smoothly without interruptions.
