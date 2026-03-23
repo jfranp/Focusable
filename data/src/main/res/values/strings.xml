@@ -1,0 +1,8 @@
+<resources>
+    <string name="notification_channel_name">Distraction Alerts</string>
+    <string name="notification_channel_description">Notifications for distraction events during focus sessions</string>
+    <string name="notification_noise_title">Noise Detected</string>
+    <string name="notification_noise_message">Ambient noise exceeds your focus threshold</string>
+    <string name="notification_motion_title">Motion Detected</string>
+    <string name="notification_motion_message">Device movement exceeds your focus threshold</string>
+</resources>
